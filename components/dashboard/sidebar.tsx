@@ -60,10 +60,6 @@ export function Sidebar() {
             </Link>
           )
         })}
-        <Button variant="outline" className="w-full justify-start gap-3 text-sm bg-transparent">
-          <LogOut className="w-4 h-4" />
-          Logout
-        </Button>
       </div>
     </aside>
   )

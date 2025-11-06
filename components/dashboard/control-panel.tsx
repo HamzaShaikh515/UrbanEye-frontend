@@ -12,16 +12,15 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Calendar as CalendarPicker } from "@/components/ui/calendar"
 import { format } from "date-fns"
 
-// Predefined locations for quick testing
-
-type PresetLocationKey = keyof typeof PRESET_LOCATIONS | "custom";
-
 const PRESET_LOCATIONS = {
   "ap-shah": { name: "A.P. Shah College", lat_min: 19.2665, lon_min: 72.9725, lat_max: 19.2695, lon_max: 72.9755 },
   "godbunder": { name: "Godbunder Road", lat_min: 19.252, lon_min: 72.961, lat_max: 19.256, lon_max: 72.966 },
   "thane-station": { name: "Thane Station", lat_min: 19.186, lon_min: 72.972, lat_max: 19.191, lon_max: 72.978 },
   "thane-police": { name: "Thane Police Station", lat_min: 19.191, lon_min: 72.973, lat_max: 19.193, lon_max: 72.976 },
+  "BKC": { name: "Bandra Kurla Complex", lat_min: 19.05, lon_min: 72.85, lat_max: 19.15, lon_max: 72.90 },
 }
+
+type PresetLocationKey = keyof typeof PRESET_LOCATIONS | "custom"
 
 interface ControlPanelProps {
   onResult?: (data: any) => void
@@ -32,15 +31,13 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [result, setResult] = useState(null)
-  const [locationType, setLocationType] = useState<PresetLocationKey>("ap-shah")
+  const [locationType, setLocationType] = useState<PresetLocationKey>("BKC")
 
-  // AOI coordinates (for custom mode)
   const [latMin, setLatMin] = useState(19.199)
   const [lonMin, setLonMin] = useState(72.973)
   const [latMax, setLatMax] = useState(19.202)
   const [lonMax, setLonMax] = useState(72.976)
 
-  // Date range (improved)
   const [startDate, setStartDate] = useState<Date | undefined>(new Date("2018-01-01"))
   const [endDate, setEndDate] = useState<Date | undefined>(new Date("2019-01-01"))
 
@@ -56,7 +53,6 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
 
     try {
       let coords
-
       if (locationType === "custom") {
         coords = { lat_min: latMin, lon_min: lonMin, lat_max: latMax, lon_max: lonMax }
       } else {
@@ -81,8 +77,19 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Pipeline failed")
 
-      setResult(data)
-      onResult?.(data)
+      // ✅ Merge AOI + date range into result object
+      const fullResult = {
+        ...data,
+        aoi: coords,
+        date_range: {
+          start: format(startDate, "yyyy-MM-dd"),
+          end: format(endDate, "yyyy-MM-dd"),
+        },
+        sensitivity: sensitivity[0],
+      }
+
+      setResult(fullResult)
+      onResult?.(fullResult)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -92,14 +99,13 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
 
   return (
     <Card className="p-6 flex flex-col">
-      {/* HEADER */}
       <div className="flex items-center gap-2 mb-6 pb-4 border-b border-border/50">
         <SettingsIcon className="w-5 h-5 text-primary" />
         <h3 className="font-semibold">Detection Settings</h3>
       </div>
 
       <div className="space-y-5">
-        {/* LOCATION SELECTOR */}
+        {/* Location Dropdown */}
         <div>
           <Label className="text-sm font-medium">Select Location</Label>
           <Select value={locationType} onValueChange={(v: string) => setLocationType(v as PresetLocationKey)}>
@@ -111,12 +117,13 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
               <SelectItem value="godbunder">Godbunder Road</SelectItem>
               <SelectItem value="thane-station">Thane Station</SelectItem>
               <SelectItem value="thane-police">Thane Police Station</SelectItem>
+              <SelectItem value="BKC">Bandra Kurla Complex</SelectItem>
               <SelectItem value="custom">Custom Coordinates</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* CUSTOM COORDINATES */}
+        {/* Custom AOI Inputs */}
         {locationType === "custom" && (
           <div>
             <Label className="text-sm font-medium">Custom AOI Coordinates</Label>
@@ -129,7 +136,7 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
           </div>
         )}
 
-        {/* DATE PICKERS (improved year navigation) */}
+        {/* Date Pickers */}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="text-sm font-medium">Start Date</Label>
@@ -145,7 +152,7 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
                   mode="single"
                   selected={startDate}
                   onSelect={setStartDate}
-                  captionLayout="dropdown" // ✅ enables month/year dropdown
+                  captionLayout="dropdown"
                   fromYear={2015}
                   toYear={2025}
                   initialFocus
@@ -168,7 +175,7 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
                   mode="single"
                   selected={endDate}
                   onSelect={setEndDate}
-                  captionLayout="dropdown" // ✅ enables month/year dropdown
+                  captionLayout="dropdown"
                   fromYear={2015}
                   toYear={2025}
                   initialFocus
@@ -178,7 +185,7 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
           </div>
         </div>
 
-        {/* SENSITIVITY */}
+        {/* Sensitivity Slider */}
         <div>
           <div className="flex items-center justify-between">
             <Label htmlFor="sensitivity" className="text-sm font-medium">
@@ -189,13 +196,12 @@ export function ControlPanel({ onResult }: ControlPanelProps) {
           <Slider id="sensitivity" min={0} max={100} step={5} value={sensitivity} onValueChange={setSensitivity} />
         </div>
 
-        {/* RUN BUTTON */}
+        {/* Run Detection Button */}
         <Button onClick={handleRunDetection} disabled={loading} className="w-full gap-2 mt-4">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
           {loading ? "Running Detection..." : "Run Detection"}
         </Button>
 
-        {/* STATUS */}
         {error && <p className="text-sm text-red-500">{error}</p>}
         {result && <p className="text-sm text-green-600">✅ Detection complete! Check map and preview.</p>}
       </div>

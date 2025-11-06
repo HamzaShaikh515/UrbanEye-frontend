@@ -1,8 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, Activity } from "lucide-react"
+import { AlertCircle, Activity, FileDown, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface LivePreviewProps {
   result?: {
@@ -16,12 +18,17 @@ interface LivePreviewProps {
       area_km2?: number
     }
     date_range?: { start: string; end: string }
+    aoi?: { lat_min: number; lon_min: number; lat_max: number; lon_max: number }
+    sensitivity?: number
     image_url?: string
     report_url?: string
   } | null
 }
 
 export function LivePreview({ result }: LivePreviewProps) {
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState("")
+
   if (!result) {
     return (
       <Card className="p-6 flex flex-col items-center justify-center text-center text-sm text-muted-foreground">
@@ -31,10 +38,41 @@ export function LivePreview({ result }: LivePreviewProps) {
     )
   }
 
-  const severityColors: Record<string, string> = {
-    HIGH: "bg-red-500/20 text-red-700 border-red-500/40",
-    MEDIUM: "bg-orange-500/20 text-orange-700 border-orange-500/40",
-    LOW: "bg-green-500/20 text-green-700 border-green-500/40",
+  const handleDownloadReport = async () => {
+    try {
+      setDownloading(true)
+      setError("")
+
+      const payload = {
+        aoi: `${result.aoi?.lat_min},${result.aoi?.lon_min} → ${result.aoi?.lat_max},${result.aoi?.lon_max}`,
+        start_date: result.date_range?.start || "",
+        end_date: result.date_range?.end || "",
+        summary: `${result.classification || "Unknown classification"} - ${result.reason || ""}`,
+        statistics: result.statistics || {},
+        image_url: `http://127.0.0.1:5000${result.image_url || ""}`,
+
+      }
+
+      const res = await fetch("http://127.0.0.1:5000/download-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) throw new Error("Failed to generate report")
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = "UrbanEye_Report.pdf"
+      link.click()
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setDownloading(false)
+    }
   }
 
   return (
@@ -47,88 +85,48 @@ export function LivePreview({ result }: LivePreviewProps) {
           <h4 className="font-semibold text-sm">Recent Detection Summary</h4>
         </div>
         <Badge className="gap-1" variant="outline">
-          <Activity className="w-2 h-2 animate-pulse" />
-          Live
+          <Activity className="w-2 h-2 animate-pulse" /> Live
         </Badge>
       </div>
 
       <div className="space-y-4">
-        <div
-          className={`p-3 rounded-lg border text-sm ${severityColors[result.severity || "LOW"] || ""}`}
-        >
+        {/* Detection Summary */}
+        <div className="p-3 rounded-lg border text-sm">
           <div className="flex items-start justify-between mb-1">
             <div className="font-medium">{result.classification}</div>
-            <Badge
-              variant="outline"
-              className={`text-xs font-semibold ${
-                result.severity === "HIGH"
-                  ? "text-red-600 border-red-500"
-                  : result.severity === "MEDIUM"
-                  ? "text-orange-600 border-orange-500"
-                  : "text-green-600 border-green-500"
-              }`}
-            >
-              {result.severity}
-            </Badge>
+            <Badge variant="outline">{result.severity}</Badge>
           </div>
           <div className="text-xs text-muted-foreground">
-            Confidence: <span className="font-semibold text-primary">{(result.confidence || 0) * 100}%</span>
+            Confidence:{" "}
+            <span className="font-semibold text-primary">{(result.confidence || 0) * 100}%</span>
           </div>
-          <p className="text-xs mt-2 text-muted-foreground leading-snug">{result.reason}</p>
+          <p className="text-xs mt-2 text-muted-foreground">{result.reason}</p>
         </div>
 
-        {result.statistics && (
-          <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-            <div className="p-2 rounded-lg bg-background/50 border border-border/40">
-              <div>Change Area</div>
-              <div className="font-semibold text-primary">
-                {result.statistics.change_percentage?.toFixed(2)}%
-              </div>
+        {/* AOI & Stats */}
+        {result.aoi && (
+          <div className="p-2 rounded-lg border text-xs text-muted-foreground">
+            <div>AOI:</div>
+            <div className="font-semibold text-primary">
+              {result.aoi.lat_min}, {result.aoi.lon_min} → {result.aoi.lat_max}, {result.aoi.lon_max}
             </div>
-            <div className="p-2 rounded-lg bg-background/50 border border-border/40">
-              <div>Building Density</div>
-              <div className="font-semibold text-primary">
-                {result.statistics.building_density_per_km2?.toFixed(1)} /km²
-              </div>
-            </div>
-            <div className="p-2 rounded-lg bg-background/50 border border-border/40">
-              <div>Area</div>
-              <div className="font-semibold text-primary">
-                {result.statistics.area_km2?.toFixed(2)} km²
-              </div>
-            </div>
-            {result.date_range && (
-              <div className="p-2 rounded-lg bg-background/50 border border-border/40 col-span-2">
-                <div>Date Range</div>
-                <div className="font-semibold text-primary">
-                  {result.date_range.start} → {result.date_range.end}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Links to view/download */}
-        <div className="flex gap-2 mt-4">
-          {result.image_url && (
-            <a
-              href={`http://127.0.0.1:5000${result.image_url}`}
-              target="_blank"
-              className="text-xs text-blue-500 underline"
-            >
-              View Map
-            </a>
+        {/* Download Report Button */}
+        <Button onClick={handleDownloadReport} disabled={downloading} size="sm" className="w-full mt-2 gap-2">
+          {downloading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Generating Report...
+            </>
+          ) : (
+            <>
+              <FileDown className="w-4 h-4" /> Download Report
+            </>
           )}
-          {result.report_url && (
-            <a
-              href={`http://127.0.0.1:5000${result.report_url}`}
-              target="_blank"
-              className="text-xs text-blue-500 underline"
-            >
-              Download Report
-            </a>
-          )}
-        </div>
+        </Button>
+
+        {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
       </div>
     </Card>
   )
